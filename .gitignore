@@ -1,6 +1,12 @@
 *~
 *#
+
 *.config
+
+# Ouptut files #
+################
+*.csv
+
 
 # Compiled source #
 ###################
