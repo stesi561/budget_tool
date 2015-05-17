@@ -17,11 +17,19 @@ app_id = "app_id"
 appropriation_name = "appropriation_name"
 category_name = "category_name"
 functional_classification = "functional_classification"
+appropriation_type = "appropriation_type"
+scope = "current_scope"
 
 # Years comparing
 this_year = "2014"
 next_year = "2015"
 
+
+app_id_matching = True
+apppropriation_name_and_category_name_matching = True
+appropriation_name_matching = True
+category_name_matching = True
+scope_matching = True
 
 # Output directory
 directory = "../output"
@@ -61,160 +69,220 @@ def getIndex(colHeaders, value):
     return index    
 
 
-class DictList:
+class Lookup:
     
-    def __init__(self):
-        self.lookup = dict()
-
-    def add(self, key, value):
-        if key not in self.lookup:
-            self.lookup[key] = [value]
-        else:
-            self.lookup[key].append(value)
-
-    def get(self, key):
-        return self.lookup[key]
-
-    def has(self, key):
-        return key in self.lookup
-    
-
-
-def findUnique(curr):
-    qry_str = """SELECT * FROM raw_data WHERE year = %s and vote='Environment'"""
-    curr.execute(qry_str, (this_year,))
-    dataCurrent = curr.fetchall()
-    
-    curr.execute(qry_str, (next_year,))
-    dataNext = curr.fetchall()
-
-    # Work from Next Budget and match from this budget
-    # First set up a look up on App Id, Appropriation Name, Category Name and Functional Classification 
-    # App Id is a unique ID but sometimes lines will change App ID
-    # Appropriation Name, Category Name and Functional Classification are almost a unique key
-    primary_key_dict = dict()
-    app_id_dict = dict()
-    category_name_dict = DictList()
-    appropriation_name_dict = DictList()
-    functional_classification_dict = DictList()
-    
-    colHeaders = [x[0] for x in curr.description]
-    primary_key_index = getIndex(colHeaders,primary_key)
-    app_id_index = getIndex(colHeaders,app_id)
-    category_name_index = getIndex(colHeaders,category_name)
-    appropriation_name_index = getIndex(colHeaders,appropriation_name)
-    functional_classification_index = getIndex(colHeaders,functional_classification)
-
-    rindex = 0
-    category_names = []
-    appropriation_names = []
-    functional_classifications = []
-
-    for row in dataCurrent:        
-        app_id_dict[row[app_id_index]] = rindex            
-        primary_key_dict[row[primary_key_index]] = rindex
-        category_name_dict.add(row[category_name_index],rindex)
-        appropriation_name_dict.add(row[appropriation_name_index],rindex)
-        functional_classification_dict.add(row[functional_classification_index], rindex)
-        rindex+= 1
-    
-
-    
-    # Now iterate through dataNext matching in dataCurrent first on app id then
-    # trying Appropriation Name, Category Name and Functional Classification on match record match
-    #
-    # For multiple possible matches record as a list and record in dups 
-    
-    dups = [] # primary key from dataNext
-    matches = dict() # matches[dataNext.primarykey] = dataCurrent.primarykey (or list if dups)
-    
-    for row in dataNext:
-        if row[app_id_index] in app_id_dict:
-            index = app_id_dict[row[app_id_index]]
-            if row[primary_key_index] in matches:
-                if type(matches[row[primary_key_index]]) != type(['list']):
-                    matches[row[primary_key_index]] = [matches[row[primary_key_index]]]
-                matches[row[primary_key_index]].append(dataCurrent[index][primary_key_index])
-                dups.append(row[primary_key_index])
-            else:
-                matches[row[primary_key_index]] = dataCurrent[index][primary_key_index]
-        else:
-            possible_rows = []
-            # first look for match on category name
-            if category_name_dict.has(row[category_name_index]):
-                possible_rows = category_name_dict.get(row[category_name_index])                
-                if len(possible_rows) == 1:
-                    # SUCCESSS
-                    matches[row[primary_key_index]] = dataCurrent[possible_rows[0]][primary_key_index]
-                    continue
-                # Two cases:
-                # 1 len(possible_rows) > 0 - filter based on appropriation then functional classification
-                # 2 len(possible_rows) == 0 - try another search based on appropriation then filter based on functional classification
+    def __init__(self,rows, exclude=[]):
+        keys = rows[0].keys()
+        self.lookups = dict()
+        # For each key used in rows create a lookup identifying at which index it can be found.
+        for key in keys:         
+            if key in exclude:
+                continue
+            self.lookups[key] = dict()        
+            for index,row in zip(range(len(rows)), rows):
+                if row[key] not in self.lookups[key]:
+                    self.lookups[key][row[key]] = []
+                self.lookups[key][row[key]].append(index)
                 
-                # Case 1:
-                if len(possible_rows) == 0:
-                    p = 0
-                    while p < len(possible_rows):
-                        # Find out if it doesn't match on Appropriation Name then Functional Classification
-                        if (row[appropriation_name_index] != dataCurrent[possible_rows[p]][appropriation_name_index] or 
-                            row[functional_classification_index] != dataCurrent[possible_rows[p]][functional_classification_index]):
-                            del possible_rows[p]
-                            # no need to inc as now p is index of next element in the list
-                        else:
-                            p+=1
-                    if len(possible_rows) == 1:
-                        matches[row[primary_key_index]] = dataCurrent[possible_rows[0]][primary_key_index]
-                    else:
-                        matches[row[primary_key_index]] = None
-                else:
-                    # Case 2
-                    if appropriation_name_dict.has(row[appropriation_name_index]):
-                        possible_rows = appropriation_name_dict.get(row[appropriation_name_index])                
-                        if len(possible_rows) == 1:
-                            # SUCCESSS
-                            matches[row[primary_key_index]] = dataCurrent[possible_rows[0]][primary_key_index]
-                            continue
-                    if len(possible_rows) > 0:
-                        p = 0
-                        while p < len(possible_rows):
-                            if row[functional_classification_index] != dataCurrent[possible_rows[p]][functional_classification_index]:
-                                del possible_rows[p]
-                            else:
-                                p+= 1
-                        if len(possible_rows) == 1:
-                            matches[row[primary_key_index]] = dataCurrent[possible_rows[0]][primary_key_index]
-                        else:
-                            matches[row[primary_key_index]] = None
 
-    with open("%s/%s.csv"% (directory,"temp.csv"),'w') as f:
-        out = csv.writer(f) 
-        out.writerow([primary_key+ " 2015", appropriation_name+ " 2015", category_name+ " 2015", functional_classification+ " 2015", app_id+ " 2015", "match type",
-                      primary_key+ " 2014", appropriation_name+ " 2014", category_name+ " 2014", functional_classification+ " 2014", app_id+ " 2014"]
-                 )
-        for row in dataNext:            
-            print "#################################"
-            output = [row[primary_key_index], row[appropriation_name_index], row[category_name_index], row[functional_classification_index], row[app_id_index]]
-            print row[primary_key_index]
-            print matches[row[primary_key_index]]
-            possibles =  matches[row[primary_key_index]]
-            if possibles is None:
-                output.append("None")                
-            elif type(possibles) is type(['list']):
-                output.append("Duplicates")
-                for m in possibles:
-                    row = dataLast[primary_key_dict[m]]
-                    output += [row[primary_key_index], row[appropriation_name_index], row[category_name_index], row[functional_classification_index], row[app_id_index]]
-                    output += "Next"
-            else:
-                output.append("Matches")
-                row = dataCurrent[primary_key_dict[possibles]]
-                output += [row[primary_key_index], row[appropriation_name_index], row[category_name_index], row[functional_classification_index], row[app_id_index]]                
-            out.writerow(output)
+    def contains(self, keyname, key):
+        return key in self.lookups[keyname]
+    
+    def get(self, keyname, key):
+        if self.contains(keyname, key):
+            return self.lookups[keyname][key]
+        else:
+            return []
+
+
+
+    def printlookup(self, keyname):
+        print self.lookups
+        print self.lookups[keyname]
         
+    
+    def output(self, keyname):
+        output=[]
+        if keyname in self.lookups:
+            for key in self.lookups[keyname]:
+                output.append((key, self.lookups[keyname][key]))
+        return output
+            
+    
+
+
+def findUnique(curr, votes_merged, this_year,next_year):
+    """Find matching budget lines - restricts searching to within votes - either of the same name or specified by votes_merged."""
+    # votes_merged[year][vote] = [list of votes from year-1 which match vote]
+
+    
+    # Get list of votes
+    qry_str = "SELECT %s FROM %s WHERE %s = %s GROUP by %s" % (vote,table, year, '%s', vote)
+    curr.execute(qry_str, (next_year,))
+    vote_names = curr.fetchall()
+    
+    # For each vote get all budget lines associated with it.
+    # First get all from next_year then get this_years (which will need to include any from votes referenced in votes_merged)
+    for vote_matching in vote_names:
+        vote_matching = vote_matching[0]
+        if vote_matching not in "Environment":
+            continue
+        qry_str = "SELECT %s, %s, %s, %s, %s, %s, %s, %s FROM %s WHERE %s IN %s and %s = %s " % (app_id, vote, appropriation_name, category_name,appropriation_type, year, primary_key,scope,
+                                                                                         table,
+                                                                                         vote, '%s', year,'%s')
+        curr.execute(qry_str,((vote_matching,),next_year))
+        lines_next = curr.fetchall()
+        votes_matching_to = []
+        if vote_matching in votes_merged[this_year]:
+            votes_matching_to = votes_merged[this_year][vote_matching]
+        votes_matching_to.append(vote_matching)
+        votes_matching_to = tuple(votes_matching_to)
+        curr.execute(qry_str,(votes_matching_to,this_year))
+        lines_this = curr.fetchall()
         
+        # Now work through lines_next matching from lines_this and marking the matchs
+        # matches[lines_next_index] = lines_this_index
+        matches = dict()
+
+        # Create lookups on lines_this to reduce amount of searching
+        lookup_this = Lookup(lines_this, [vote, year])
+        
+        for line_num, line in zip(range(len(lines_next)),lines_next):
+            # Order of priority for finding matches:
+            # app_id            
+            # appropriation_name and category_name
+            # appropriation_name
+            # category_name
+            # scope
+            #
+            # Restrictions on matches
+            # appropriation_type must be the same
+            possibles = []
+            if app_id_matching:            
+                if match_on_app_id(line, lines_this, lookup_this, matches,line_num):
+                    print_match(line_num, line, lines_this, matches, 'app_id')
+                    continue                                    
+            if apppropriation_name_and_category_name_matching:
+                if match_on_appropriation_name_and_category_name(line, lines_this, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_this, matches, 'appropriation_name and category_name')
+                    continue
+               
+            if appropriation_name_matching:
+                if match_on_appropriation_name(line, lines_this, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_this, matches, 'appropriation_name')
+                    continue
+
+            if category_name_matching:
+                if match_on_category_name(line, lines_this, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_this, matches, 'category name')                                    
+                    continue
+
+            if scope_matching:
+                if match_on_scope(line, lines_this, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_this, matches, 'category name')                                    
+                    continue
+
+            print_unmatched(line)
+
+
+def match_on_single(line, lines_this, lookup_this, matches, line_num, match_on):
+    possibles = lookup_this.get(match_on, line[match_on])
+    if len(possibles) == 1:
+        if confirm_match(line, lines_this[possibles[0]]):
+            matches[line_num] = possibles[0]
+            return True
+    elif len(possibles) == 0:
+        return False
+    else:
+        # Test all possibles against restriction criteria if only one
+        # possible meets the criteria record it as a match.
+        confirmed = []
+        for possible_match in possibles:
+            if confirm_match(line, lines_this[possible_match]):
+                confirmed.append(possible_match)
+        if len(confirmed) == 1:
+            matches[line_num] = confirmed[0]
+            return True
+        else:
+            return False
+
+def match_on_scope(line, lines_this, lookup_this, matches, line_num):
+    return match_on_single(line, lines_this, lookup_this, matches, line_num, scope)
+
+def match_on_appropriation_name(line, lines_this, lookup_this, matches, line_num):
+    return match_on_single(line, lines_this, lookup_this, matches, line_num, appropriation_name)
+
+def match_on_category_name(line, lines_this, lookup_this, matches, line_num):
+    return match_on_single(line, lines_this, lookup_this, matches, line_num, category_name)
+
+def match_on_appropriation_name_and_category_name(line, lines_this, lookup_this, matches, line_num):
+    possibles_a = set(lookup_this.get(appropriation_name, line[appropriation_name]))
+    possibles_b = set(lookup_this.get(category_name, line[category_name]))
+    possibles = list(possibles_a.intersection(possibles_b))
+    
+    if len(possibles) == 1:
+        if confirm_match(line, lines_this[possibles[0]]):
+            matches[line_num] = possibles[0]
+            return True
+    elif len(possibles) == 0:
+        return False
+    else:
+        # Test all possibles against restriction criteria if only one
+        # possible meets the criteria record it as a match.
+        confirmed = []
+        for possible_match in possibles:
+            if confirm_match(line, lines_this[possible_match]):
+                confirmed.append(possible_match)
+        if len(confirmed) == 1:
+            matches[line_num] = confirmed[0]
+            return True
+        else:
+            return False
+
+
+            
+def match_on_app_id(line, lines_this, lookup_this, matches, line_num):
+    possibles = lookup_this.get(app_id, line[app_id])
+    if len(possibles) == 1:
+        if confirm_match(line,lines_this[possibles[0]]):
+            matches[line_num] = possibles[0]
+            return True
+        else:
+            print "Failed to match. Same app_id, different appropriation_type"
+            print line
+            print lines_this[possibles[0]]
+            sys.exit(1)
+    elif len(possibles) > 1:
+        print "Failed to match. Duplicate app id"
+        sys.exit(1)
+    else:
+        return False
+
+def confirm_match(line_next, line_this):
+    return line_next[appropriation_type] == line_this[appropriation_type]
+
+def print_unmatched(line):
+    print "Not Matched"
+    print line
+    print
+                    
+def print_match(line_num, line, lines_this, matches, mtype = None):
+    if True:
+        return
+    if mtype is not None:
+        print mtype
+    print line
+    print lines_this[matches[line_num]]
+    print 
+    
 
 def main(curr):
-    findUnique(curr)
+    votes_merged = dict()
+    votes_merged['2012'] = dict()
+    votes_merged['2012']['Environment'] = ['Climate Change']
+    this_year = '2012'
+    next_year = '2013'
+    findUnique(curr, votes_merged, this_year, next_year)
     
     
 if __name__ == "__main__": 
@@ -222,7 +290,7 @@ if __name__ == "__main__":
     with open("default.config",'r') as f:
         conn_str = f.readline()                
         conn = psycopg2.connect(conn_str)       
-        curr = conn.cursor()
+        curr = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         main(curr)
         conn.commit()
 
