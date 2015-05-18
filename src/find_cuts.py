@@ -19,6 +19,7 @@ category_name = "category_name"
 functional_classification = "functional_classification"
 appropriation_type = "appropriation_type"
 scope = "current_scope"
+amount = "amount"
 
 # Years comparing
 this_year = "2014"
@@ -125,9 +126,9 @@ def findUnique(curr, votes_merged, this_year,next_year):
     # First get all from next_year then get this_years (which will need to include any from votes referenced in votes_merged)
     for vote_matching in vote_names:
         vote_matching = vote_matching[0]
-        if vote_matching not in "Environment":
-            continue
-        qry_str = "SELECT %s, %s, %s, %s, %s, %s, %s, %s FROM %s WHERE %s IN %s and %s = %s " % (app_id, vote, appropriation_name, category_name,appropriation_type, year, primary_key,scope,
+        print vote_matching
+
+        qry_str = "SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s FROM %s WHERE %s IN %s and %s = %s " % (app_id, vote, appropriation_name, category_name,appropriation_type, year, primary_key,scope,amount,
                                                                                          table,
                                                                                          vote, '%s', year,'%s')
         curr.execute(qry_str,((vote_matching,),next_year))
@@ -145,45 +146,100 @@ def findUnique(curr, votes_merged, this_year,next_year):
         matches = dict()
 
         # Create lookups on lines_this to reduce amount of searching
-        lookup_this = Lookup(lines_this, [vote, year])
+        lookup_this = None
+        if len(lines_this) > 0:
+            lookup_this = Lookup(lines_this, [vote, year])
         
+            for line_num, line in zip(range(len(lines_next)),lines_next):
+                # Order of priority for finding matches:
+                # app_id            
+                # appropriation_name and category_name
+                # appropriation_name
+                # category_name
+                # scope
+                #
+                # Restrictions on matches
+                # appropriation_type must be the same
+                possibles = []
+                if app_id_matching:            
+                    if match_on_app_id(line, lines_this, lookup_this, matches,line_num):
+                        print_match(line_num, line, lines_this, matches, 'app_id')
+                        continue                                    
+                if apppropriation_name_and_category_name_matching:
+                    if match_on_appropriation_name_and_category_name(line, lines_this, lookup_this, matches, line_num):
+                        print_match(line_num, line, lines_this, matches, 'appropriation_name and category_name')
+                        continue
+
+                if appropriation_name_matching:
+                    if match_on_appropriation_name(line, lines_this, lookup_this, matches, line_num):
+                        print_match(line_num, line, lines_this, matches, 'appropriation_name')
+                        continue
+
+                if category_name_matching:
+                    if match_on_category_name(line, lines_this, lookup_this, matches, line_num):
+                        print_match(line_num, line, lines_this, matches, 'category name')                                    
+                        continue
+
+                if scope_matching:
+                    if match_on_scope(line, lines_this, lookup_this, matches, line_num):
+                        print_match(line_num, line, lines_this, matches, 'category name')                                    
+                        continue
+
+            #print_unmatched(line)
+
+        output = []
         for line_num, line in zip(range(len(lines_next)),lines_next):
-            # Order of priority for finding matches:
-            # app_id            
-            # appropriation_name and category_name
-            # appropriation_name
-            # category_name
-            # scope
-            #
-            # Restrictions on matches
-            # appropriation_type must be the same
-            possibles = []
-            if app_id_matching:            
-                if match_on_app_id(line, lines_this, lookup_this, matches,line_num):
-                    print_match(line_num, line, lines_this, matches, 'app_id')
-                    continue                                    
-            if apppropriation_name_and_category_name_matching:
-                if match_on_appropriation_name_and_category_name(line, lines_this, lookup_this, matches, line_num):
-                    print_match(line_num, line, lines_this, matches, 'appropriation_name and category_name')
-                    continue
-               
-            if appropriation_name_matching:
-                if match_on_appropriation_name(line, lines_this, lookup_this, matches, line_num):
-                    print_match(line_num, line, lines_this, matches, 'appropriation_name')
-                    continue
+            if line_num in matches:                    
+                output.append(output_line(line,lines_this[matches[line_num]]))
+            else:
+                output.append(output_line(line, None))
+            
+        # Output the lines from last year that were not matched
+        matched = set(matches.values())
+        for line_num in range(len(lines_this)):
+            if line_num not in matched:
+                output.append(output_line(None,lines_this[line_num]))
+                
+                
+        output.sort()
 
-            if category_name_matching:
-                if match_on_category_name(line, lines_this, lookup_this, matches, line_num):
-                    print_match(line_num, line, lines_this, matches, 'category name')                                    
-                    continue
+            
+        # Output files to directory/byvote/{{vote}}.csv
+        with open("%s/byvote/%s.csv" % (directory, vote_matching), 'w')  as f:            
+            csvwriter = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)                            
+            csvwriter.writerow([appropriation_name, category_name,appropriation_type,scope,this_year, next_year, '$ difference', '% difference'])
+            for diff, row in output:
+                csvwriter.writerow(row)
+            
+            
+            
+def output_line(line_next, line_this):
+    # Columns:
+    # appropriation_name, category_name,appropriation_type,scope, $ this_year, $ next_year, $ difference, % difference )
+    columns = (appropriation_name, category_name,appropriation_type,scope)
+    output = []
+    getNamesFrom = line_next
+    if line_next is None:
+        getNamesFrom = line_this
+        line_next = dict()
+        line_next[amount] = 0
+    elif line_this is None:
+        line_this = dict()
+        line_this[amount] = 0
 
-            if scope_matching:
-                if match_on_scope(line, lines_this, lookup_this, matches, line_num):
-                    print_match(line_num, line, lines_this, matches, 'category name')                                    
-                    continue
+    for col in columns:
+        output.append(getNamesFrom[col])
+    this_year = line_this[amount]
+    next_year = line_next[amount]
 
-            print_unmatched(line)
-
+    output.append(this_year)
+    output.append(next_year)
+    output.append(next_year-this_year)
+    if this_year > 0:
+        output.append((next_year-this_year)/(this_year*1.0))
+    else:
+        output.append('')
+    return (output[-2], output)
 
 def match_on_single(line, lines_this, lookup_this, matches, line_num, match_on):
     possibles = lookup_this.get(match_on, line[match_on])
