@@ -6,6 +6,7 @@ import csv
 
 # Table Names
 table = "raw_data"
+table2 = "raw_data"
 
 # Column Names
 primary_key = "tid"
@@ -115,8 +116,6 @@ class Lookup:
 def findUnique(curr, votes_merged, this_year,next_year):
     """Find matching budget lines - restricts searching to within votes - either of the same name or specified by votes_merged."""
     # votes_merged[year][vote] = [list of votes from year-1 which match vote]
-
-    
     # Get list of votes
     qry_str = "SELECT %s FROM %s WHERE %s = %s GROUP by %s" % (vote,table, year, '%s', vote)
     curr.execute(qry_str, (next_year,))
@@ -140,79 +139,193 @@ def findUnique(curr, votes_merged, this_year,next_year):
         votes_matching_to = tuple(votes_matching_to)
         curr.execute(qry_str,(votes_matching_to,this_year))
         lines_this = curr.fetchall()
+
+        qry_str = "SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s FROM %s WHERE %s IN %s and %s = %s " % (
+            app_id, vote, appropriation_name, category_name,appropriation_type, year, primary_key,scope,amount,
+            table2,
+            vote, '%s', year,'%s')
+        curr.execute(qry_str, (votes_matching_to,this_year))
+        lines_original = curr.fetchall()
         
-        # Now work through lines_next matching from lines_this and marking the matchs
-        # matches[lines_next_index] = lines_this_index
-        matches = dict()
+        matches = match_lines(lines_next, lines_this)
+        matches_original = match_lines(lines_next, lines_original)
 
-        # Create lookups on lines_this to reduce amount of searching
-        lookup_this = None
-        if len(lines_this) > 0:
-            lookup_this = Lookup(lines_this, [vote, year])
-        
-            for line_num, line in zip(range(len(lines_next)),lines_next):
-                # Order of priority for finding matches:
-                # app_id            
-                # appropriation_name and category_name
-                # appropriation_name
-                # category_name
-                # scope
-                #
-                # Restrictions on matches
-                # appropriation_type must be the same
-                possibles = []
-                if app_id_matching:            
-                    if match_on_app_id(line, lines_this, lookup_this, matches,line_num):
-                        print_match(line_num, line, lines_this, matches, 'app_id')
-                        continue                                    
-                if apppropriation_name_and_category_name_matching:
-                    if match_on_appropriation_name_and_category_name(line, lines_this, lookup_this, matches, line_num):
-                        print_match(line_num, line, lines_this, matches, 'appropriation_name and category_name')
-                        continue
+        output_filename = "%s/byvote/%s.csv" % (directory, vote_matching)
+        output_supps(matches, lines_next, lines_this, matches_original, lines_original, output_filename)
 
-                if appropriation_name_matching:
-                    if match_on_appropriation_name(line, lines_this, lookup_this, matches, line_num):
-                        print_match(line_num, line, lines_this, matches, 'appropriation_name')
-                        continue
+def match_lines(lines, lines_to_match):
 
-                if category_name_matching:
-                    if match_on_category_name(line, lines_this, lookup_this, matches, line_num):
-                        print_match(line_num, line, lines_this, matches, 'category name')                                    
-                        continue
+    # Now work through lines_next matching from lines_this and marking the matchs
+    # matches[lines_next_index] = lines_this_index
+    matches = dict()
 
-                if scope_matching:
-                    if match_on_scope(line, lines_this, lookup_this, matches, line_num):
-                        print_match(line_num, line, lines_this, matches, 'category name')                                    
-                        continue
+    # Create lookups on lines_this to reduce amount of searching
+    lookup_this = None
 
-            #print_unmatched(line)
+    if len(lines_to_match) > 0:
+        lookup_this = Lookup(lines_to_match, [vote, year])
 
-        output = []
-        for line_num, line in zip(range(len(lines_next)),lines_next):
-            if line_num in matches:                    
-                output.append(output_line(line,lines_this[matches[line_num]]))
-            else:
-                output.append(output_line(line, None))
+        for line_num, line in zip(range(len(lines)),lines):
+            # Order of priority for finding matches:
+            # app_id            
+            # appropriation_name and category_name
+            # appropriation_name
+            # category_name
+            # scope
+            #
+            # Restrictions on matches
+            # appropriation_type must be the same
+            possibles = []
+            if app_id_matching:            
+                if match_on_app_id(line, lines_to_match, lookup_this, matches,line_num):
+                    print_match(line_num, line, lines_to_match, matches, 'app_id')
+                    continue                                    
+            if apppropriation_name_and_category_name_matching:
+                if match_on_appropriation_name_and_category_name(line, lines_to_match, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_to_match, matches, 'appropriation_name and category_name')
+                    continue
+
+            if appropriation_name_matching:
+                if match_on_appropriation_name(line, lines_to_match, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_to_match, matches, 'appropriation_name')
+                    continue
+
+            if category_name_matching:
+                if match_on_category_name(line, lines_to_match, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_to_match, matches, 'category name')                                    
+                    continue
+
+            if scope_matching:
+                if match_on_scope(line, lines_to_match, lookup_this, matches, line_num):
+                    print_match(line_num, line, lines_to_match, matches, 'category name')                                    
+                    continue
+    return matches
+
+     
+def output_supps(matches_adjusted, lines, lines_adjusted, matches_original, lines_original, output_file):
+                    
+    output = []
+    matched = [set(),set()]
+    for line_num, line in zip(range(len(lines)),lines):        
+        line_out = [line,None,None]
+        if line_num in matches_adjusted:                    
+            line_out[1] = lines_adjusted[matches_adjusted[line_num]]
+            matched[0].add(matches_adjusted[line_num])
+        if line_num in matches_original:                    
+            line_out[2] = lines_original[matches_original[line_num]]
+            matched[1].add(matches_original[line_num])
+        output.append(line_out)
+
+    # Now match orginal lines - could optmise by only matching unmatched...
+    matches = match_lines(lines_adjusted, lines_original)
+    
+    # and then append first lines_adjusted that were not matched with
+    # a line from lines with any matching lines from lines_original
+    # then append any unmatched lines from lines_original
+    for line_num,line in zip(range(len(lines_adjusted)), lines_adjusted):
+        if line_num in matched[0]:
+            # line has been output already:
+            continue
+        line_out  = [None, line, None]
+        if line_num in matches:
+            line_out[2] = lines_original[matches[line_num]]
+            matched[1].add(matches[line_num])
+        output.append(line_out)
+    
+        for line_num in range(len(lines_original)):
+            if line_num not in matched[1]:
+                output.append([None, None, lines_original[line_num]])
+
+
+    # Condense output list remove unnecessary data and add differences
+    processing = output
+    output = []
+    for line in processing:
+        output.append(output_line3(line[0],line[1],line[2]))
+
+    output.sort()
             
-        # Output the lines from last year that were not matched
-        matched = set(matches.values())
-        for line_num in range(len(lines_this)):
-            if line_num not in matched:
-                output.append(output_line(None,lines_this[line_num]))
-                
-                
-        output.sort()
+    # Output files to directory/byvote/{{vote}}.csv
+    with open(output_file, 'w')  as f:            
+        csvwriter = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL) 
+        csvwriter.writerow([appropriation_name, category_name,appropriation_type,scope,
+                            "%s Budget for" % this_year,"%s Est Actual" % this_year, "%s Budget for" % next_year,
+                            '$ difference Est Act and Budget ', '% difference Est Act and Budget',
+                            '$ difference Budget to Budget', '% difference Budget to Budget',])
+                           
+        for diff, row in output:
+            csvwriter.writerow(row)
+            
 
+     
+def output(matches, lines, lines_matched, output_file):
+                    
+    output = []
+    for line_num, line in zip(range(len(lines)),lines):
+        if line_num in matches:                    
+            output.append(output_line(line,lines_matched[matches[line_num]]))
+        else:
+            output.append(output_line(line, None))
+
+    # Output the lines from last year that were not matched
+    matched = set(matches.values())
+    for line_num in range(len(lines_matched)):
+        if line_num not in matched:
+            output.append(output_line(None,lines_matched[line_num]))
+
+    output.sort()
+    
             
-        # Output files to directory/byvote/{{vote}}.csv
-        with open("%s/byvote/%s.csv" % (directory, vote_matching), 'w')  as f:            
-            csvwriter = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)                            
-            csvwriter.writerow([appropriation_name, category_name,appropriation_type,scope,this_year, next_year, '$ difference', '% difference'])
-            for diff, row in output:
-                csvwriter.writerow(row)
+    # Output files to directory/byvote/{{vote}}.csv
+    with open(output_file, 'w')  as f:            
+        csvwriter = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)                            
+        csvwriter.writerow([appropriation_name, category_name,appropriation_type,scope,this_year,this_year, next_year, '$ difference', '% difference'])
+        for diff, row in output:
+            csvwriter.writerow(row)
             
             
-            
+def output_line3(line,line_adjusted, line_original):
+    columns = (appropriation_name, category_name,appropriation_type,scope)
+    output = []
+    getNamesFrom = line
+    if line is None:
+        if  line_adjusted is not None:
+            getNamesFrom = line_adjusted
+        else:
+            getNamesFrom = line_original
+
+    for col in columns:
+        output.append(getNamesFrom[col])
+    estimate = 0
+    actual = 0
+    last_estimate = 0
+    if line is not None:
+        estimate = line[amount]
+    if line_adjusted is not None:
+        actual = line_adjusted[amount]
+    if line_original is not None:
+        last_estimate = line_original[amount]
+
+    output.append(last_estimate)    
+    output.append(actual)
+    output.append(estimate)
+
+    output.append(estimate-actual)
+    if actual > 0:
+        output.append((estimate-actual)/(actual*1.0))
+    else:
+        output.append('')
+    
+    output.append(estimate-last_estimate)
+    if last_estimate > 0:
+        output.append((estimate-last_estimate)/(last_estimate*1.0))
+    else:
+        output.append('')
+
+    sort = estimate-actual
+
+    return (sort, output)
+
 def output_line(line_next, line_this):
     # Columns:
     # appropriation_name, category_name,appropriation_type,scope, $ this_year, $ next_year, $ difference, % difference )
