@@ -105,17 +105,9 @@ def main(curr):
     
 
 if __name__ == "__main__":
-
-    dbname='budget'
-    user='python'
-    host='192.168.20.106'
-    password='ReddEft7'
-    conn_str = "dbname='%s' user='%s' host='%s' password='%s'" % (dbname, user, host, password)
-    conn = psycopg2.connect(conn_str)       
-    curr = conn.cursor()
-    main(curr)
-    conn.commit()
-        
-        
-        
-
+    with open("default.config",'r') as f:
+        conn_str = f.readline()                
+        conn = psycopg2.connect(conn_str)       
+        curr = conn.cursor()
+        main(curr)
+        conn.commit()
