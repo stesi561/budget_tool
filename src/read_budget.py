@@ -106,13 +106,8 @@ def main(curr):
 
 if __name__ == "__main__":
 
-    #dbname='budget'
-    #user='python'
-    #host='localhost'
-    #password='ReddEft7'
     
-    
-    #conn_str = "dbname='%s' user='%s' host='%s' password='%s'" % (dbname, user, host, password)
+    #config_file_txt = "dbname='%s' user='%s' host='%s' password='%s'"
 
     with open(config_file,'r') as f:
         lines = f.readlines()
