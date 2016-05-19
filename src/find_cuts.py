@@ -122,6 +122,8 @@ def findUnique(curr, votes_merged, this_year,next_year):
     curr.execute(qry_str, (next_year,))
     vote_names = curr.fetchall()
     
+    all_votes = []
+
     # For each vote get all budget lines associated with it.
     # First get all from next_year then get this_years (which will need to include any from votes referenced in votes_merged)
     for vote_matching in vote_names:
@@ -203,6 +205,7 @@ def findUnique(curr, votes_merged, this_year,next_year):
                 
         output.sort()
 
+        all_votes.extend(output)
             
         # Output files to directory/byvote/{{vote}}.csv
         with open("%s/byvote/%s.csv" % (directory, vote_matching), 'w')  as f:            
@@ -210,8 +213,11 @@ def findUnique(curr, votes_merged, this_year,next_year):
             csvwriter.writerow([appropriation_name, category_name,appropriation_type,scope,this_year, next_year, '$ difference', '% difference'])
             for diff, row in output:
                 csvwriter.writerow(row)
-            
-            
+    all_votes.sort()
+    with open("%s/combined_%s_%s.csv" % (directory, next_year, this_year), 'w')  as f:            
+        csvwriter = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)                            
+        for diff, row in all_votes:
+            csvwriter.writerow(row)
             
 def output_line(line_next, line_this):
     # Columns:

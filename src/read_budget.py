@@ -7,7 +7,7 @@ import xlrd
 import sys
 import psycopg2
 
-
+config_file = "default.config"
 inputfilename = "../data/b14-expenditure-data.xls"
 datasheetname= 'Raw Data'
 tablename = 'raw_data'
@@ -106,11 +106,19 @@ def main(curr):
 
 if __name__ == "__main__":
 
-    dbname='budget'
-    user='python'
-    host='192.168.20.106'
-    password='ReddEft7'
-    conn_str = "dbname='%s' user='%s' host='%s' password='%s'" % (dbname, user, host, password)
+    #dbname='budget'
+    #user='python'
+    #host='localhost'
+    #password='ReddEft7'
+    
+    
+    #conn_str = "dbname='%s' user='%s' host='%s' password='%s'" % (dbname, user, host, password)
+
+    with open(config_file,'r') as f:
+        lines = f.readlines()
+
+    conn_str = lines[0].rstrip('\n')
+    
     conn = psycopg2.connect(conn_str)       
     curr = conn.cursor()
     main(curr)
