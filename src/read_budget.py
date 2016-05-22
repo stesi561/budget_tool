@@ -56,7 +56,7 @@ def create_table(data,curr):
         
         cols.append((index,col_name,col_postgres_type, col_max_length))
     ins_str = "CREATE TABLE %s (" %tablename
-    ins_str += "tid" + " SERIAL"
+    ins_str += "tid SERIAL PRIMARY KEY"
     for c in cols:
         ins_str += ", "
         ins_str += c[1] + " " + c[2]
@@ -83,7 +83,7 @@ def load_data(data,cols, curr):
     for row in range(1,data.nrows):
         input_data.append(data.row_values(row))
 
-    print "Read Data"
+    print "Data Read %d rows "  % data.nrows
     print "Loading into Postgresql"
     curr.executemany(ins_str,input_data)
     
