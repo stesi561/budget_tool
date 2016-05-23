@@ -114,20 +114,36 @@ def find_matching_app_ids(curr):
         curr.executemany(ins_str, matching_lines)
 
 def show_matches(curr):
-    #cols = ["vote",
-    #        "appropriation_name",
-    #        "category_name"]
-    #qry_str = "SELECT "
-    #qry_cols = []
-    #for col in cols:
-    #    print col
-    #    qry_cols.append("lr.%s, mr.%s" % (col, col))
-    #qry_str += ', '.join(qry_cols)
-    #qry_str += " FROM matches AS m INNER JOIN lines AS l ON m.lid = l.lid"    
-    #qry_str += " INNER JOIN %s AS lr ON l.tid = lr.tid " % raw_data_table
-    #qry_str += " INNER JOIN %s AS mr ON m.tid = mr.tid " % raw_data_table    
-    #print qry_str
-    qry_str = "SELECT l.name, r.category_name" 
+
+    # Each line holds a row that will be outputed in table form.
+    # Key for lines is the lid.
+    # Each row is a dict as well.
+    lines = dict()
+    
+    # get years
+    qry_str = "SELECT year FROM raw_data GROUP BY year ORDER BY year"
+    curr.execute(qry_str)
+    years = curr.fetchall()
+
+    for year in years:
+        qry_str = "SELECT l.lid,r.tid, r.amount FROM lines AS l INNER JOIN matches AS m ON l.lid = m.lid INNER JOIN raw_data as r ON m.tid = r.tid WHERE r.year = %s"
+        curr.execute(qry_str, year)
+        year = year[0] # remove from dictcursor row
+        for row in curr.fetchall():
+            lid = row['lid']
+            if lid not in lines:
+                lines[lid] = dict()
+                for y in [x['year'] for x in years]:
+                    lines[lid][y] = None
+                    lines[lid]['tids'] = []
+            if lines[lid][year] is not None:
+                print "ERROR MULTIPLE matches for line.id %s in year %s was %s adding %s" % (lid, year, lines[lid][year], row['amount'])
+                        
+            lines[lid][year] = row['amount']
+            lines[lid]['tids'].append(row['tid'])
+            
+    for row in lines:
+        print lines[row]
 
 def main(curr):
     #set_up_tables(curr)
