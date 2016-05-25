@@ -134,7 +134,7 @@ def output(curr):
 
 
 
-
+    lookup = dict()
     # Order by vote
     # Get votes
     qry_str = "SELECT mr.tid, mmr.{amount} as amount, mmr.year as year, mmr.tid as match_tid".format(amount=amount)
@@ -146,23 +146,19 @@ def output(curr):
     qry_str += " INNER JOIN {data_table} as mmr ON mmr.tid = mm.tid"
     qry_str = qry_str.format(data_table = raw_data_table)
 
-    qry_str += " WHERE mmr.year + 1 = mr.year"
-    print qry_str
-    curr.execute(qry_str)
+    qry_str += " WHERE mmr.year + %s = mr.year"
 
-    lookup = dict()
-    for row in curr.fetchall():
-        if row['tid'] not in lookup:
-            lookup[row['tid']] = dict()
+    for diff in range(1, len(years)):
+        curr.execute(qry_str, [diff])
+        for row in curr.fetchall():
+            if row['tid'] not in lookup:
+                lookup[row['tid']] = dict()        
+            lookup[row['tid']][row['year']] = [row['amount'], row['match_tid']]
+
+    
+
         
-        lookup[row['tid']][row['year']] = [row['amount'], row['match_tid']]
 
-
-        
-    for row in lookup:
-        print lookup[row]
-
-    sys.exit()
 
     qry_str = "SELECT tid, r.{department}, r.{vote}, r.{app_id}, r.{parent_id}, r.{appropriation_name}, "
     qry_str += " r.{category_name}, r.{group_type}, r.{appropriation_type}, r.{restriction_type}, "
@@ -218,11 +214,11 @@ def output(curr):
         for row in curr.fetchall():
             out_line = list(row)
             for y in years[:-1]:                
-                print y
-                if row['tid'] in lookup and y in lookup[row['tid']]:
-                    print lookup[row['tid']][y]
+                if row['tid'] in lookup and y in lookup[row['tid']]:                    
                     out_line+=lookup[row['tid']][y]
-                print "---"
+                else:
+                    out_line+=['','']
+            
             csvwriter.writerow(out_line)
 
         
