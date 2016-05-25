@@ -3,7 +3,10 @@
 import psycopg2
 import psycopg2.extras
 import sys
-import json
+
+import csv
+
+outfile = "output.csv"
 
 # Table Names
 raw_data_table = "raw_data"
@@ -118,39 +121,110 @@ def find_matching_app_ids(curr):
 
 def output(curr):
 
+    # Get base year
+    qry_str = "SELECT {year} FROM {data_table} GROUP BY {year}".format(year=year, data_table= raw_data_table)
+    curr.execute(qry_str)
+
+    years = []
+    for line in curr.fetchall():
+        years.append(line[0])
+
+    years.sort()
+    base_year =  max(years)
+
+
+
 
     # Order by vote
-    # data['vote'] = {}
-    data = dict()
-
     # Get votes
-    qry_str = "SELECT {vote} FROM {table} GROUP BY {vote}".format(vote=vote, table=raw_data_table)
-    curr.execute(qry_str)    
+    qry_str = "SELECT mr.tid, mmr.{amount} as amount, mmr.year as year, mmr.tid as match_tid".format(amount=amount)
+
+    qry_str += " FROM lines AS l "
+    qry_str += " INNER JOIN matches AS m ON l.lid = m.lid"
+    qry_str += " INNER JOIN matches as mm ON m.lid = mm.lid"
+    qry_str += " INNER JOIN {data_table} as mr ON mr.tid = m.tid"
+    qry_str += " INNER JOIN {data_table} as mmr ON mmr.tid = mm.tid"
+    qry_str = qry_str.format(data_table = raw_data_table)
+
+    qry_str += " WHERE mmr.year + 1 = mr.year"
+    print qry_str
+    curr.execute(qry_str)
+
+    lookup = dict()
     for row in curr.fetchall():
+        if row['tid'] not in lookup:
+            lookup[row['tid']] = dict()
         
+        lookup[row['tid']][row['year']] = [row['amount'], row['match_tid']]
+
+
+        
+    for row in lookup:
+        print lookup[row]
+
+    sys.exit()
+
+    qry_str = "SELECT tid, r.{department}, r.{vote}, r.{app_id}, r.{parent_id}, r.{appropriation_name}, "
+    qry_str += " r.{category_name}, r.{group_type}, r.{appropriation_type}, r.{restriction_type}, "
+    qry_str += " r.{functional_classification}, r.{amount}, r.{year}, r.{amount_type}, r.{periodicity}, "
+    qry_str += " r.{current_scope}" 
+
+    qry_str += " FROM {data_table} as r "
     
+    qry_str += " WHERE r.year = %s"
 
-    
-    raw_cols = [department, vote, app_id, parent_id, category_name,
-                group_type, appropriation_type, restriction_type,
-                functional_classification, amount, year, amount_type,
-                periodicity, current_scope]
-    raw_cols = ["mr." + x for x in raw_cols]
-    qry_str = "SELECT {cols},  mr.{amount} - mmr.{amount} AS change, mr.tid AS tid".format( cols=",".join(raw_cols), amount=amount)
-    qry_str += " INTO cuts FROM matches AS m"
-    qry_str += " INNER JOIN lines AS l ON m.lid = l.lid"
-    qry_str += " INNER JOIN matches AS mm ON  m.lid = mm.lid"
-    qry_str += " INNER JOIN {raw_data} AS mr ON mr.tid = m.tid".format(raw_data= raw_data_table)
-    qry_str += " INNER JOIN {raw_data} AS mmr ON mmr.tid = mm.tid".format(raw_data= raw_data_table)
-    qry_str += " WHERE mr.year =  mmr.year + 1"
+    qry_str = qry_str.format(department=department, 
+                             vote=vote,
+                             app_id = app_id, 
+                             parent_id=parent_id, 
+                             appropriation_name = appropriation_name,
+                             category_name = category_name,
+                             group_type = group_type,
+                             appropriation_type = appropriation_type,
+                             restriction_type = restriction_type,
+                             functional_classification = functional_classification,
+                             amount = amount, 
+                             year = year,
+                             amount_type = amount_type,
+                             periodicity = periodicity,
+                             current_scope = current_scope,
+                             data_table = raw_data_table)
 
+    curr.execute(qry_str, [base_year])
 
-    curr.execute(qry_str);
+    with open(outfile, 'w') as f:
+        csvwriter  = csv.writer(f)
+        header = [department, 
+                  vote,
+                  app_id, 
+                  parent_id, 
+                  appropriation_name,
+                  category_name,
+                  group_type,
+                  appropriation_type,
+                  restriction_type,
+                  functional_classification,
+                  amount, 
+                  year,
+                  amount_type,
+                  periodicity,
+                  current_scope]
 
+        for y in years[:-1]:
+            header += [y, '{y} - match'.format(y=y)]
+            
+        
+        csvwriter.writerow(header)
+        for row in curr.fetchall():
+            out_line = list(row)
+            for y in years[:-1]:                
+                print y
+                if row['tid'] in lookup and y in lookup[row['tid']]:
+                    print lookup[row['tid']][y]
+                    out_line+=lookup[row['tid']][y]
+                print "---"
+            csvwriter.writerow(out_line)
 
-    qry_str 
-    
-    
         
         
 def show_matches(curr):
